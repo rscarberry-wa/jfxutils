@@ -18,6 +18,7 @@ package org.gillius.jfxutils.chart;
 
 import javafx.event.EventHandler;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.chart.XYChart;
 import javafx.scene.input.MouseButton;
@@ -27,9 +28,13 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.StrokeType;
 import org.gillius.jfxutils.JFXUtil;
+
+import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * JFXChartUtil contains chart-related JavaFX utility methods used in the Gillius jfxutils project.
@@ -90,6 +95,64 @@ public class JFXChartUtil {
 		return chartPane;
 	}
 
+	public static Region setupSelection(XYChart<?,?> chart,
+										EventHandler<? super MouseEvent> selectionMouseFilter,
+										Rectangle selectionRect,
+										Consumer<Rectangle2D> selectionCallback,
+										boolean mouseDragZoomingAllowed,
+										boolean mouseWheelZoomingAllowed) {
+
+		Objects.requireNonNull(chart);
+		Objects.requireNonNull(selectionMouseFilter);
+		Objects.requireNonNull(selectionRect);
+
+		StackPane chartPane = new StackPane();
+
+		if (chart.getParent() != null) {
+			JFXUtil.replaceComponent(chart, chartPane);
+		}
+
+		selectionRect.setX(0);
+		selectionRect.setY(0);
+		selectionRect.setWidth(0);
+		selectionRect.setHeight(0);
+		selectionRect.setMouseTransparent(true);
+		StackPane.setAlignment(selectionRect, Pos.TOP_LEFT);
+
+		chartPane.getChildren().addAll(chart, selectionRect);
+
+		ChartSelectionManager selectionManager = new ChartSelectionManager(
+				chartPane, selectionRect, chart, selectionCallback,
+				mouseDragZoomingAllowed, mouseWheelZoomingAllowed);
+
+		selectionManager.setMouseFilter(selectionMouseFilter);
+		selectionManager.start();
+
+		return chartPane;
+	}
+
+	public static Region setupSelection(XYChart<?,?> chart,
+										EventHandler<? super MouseEvent> selectionMouseFilter,
+										Consumer<Rectangle2D> selectionCallback,
+										boolean mouseDragZoomingAllowed,
+										boolean mouseWheelZoomingAllowed) {
+
+		Rectangle selectRect = new Rectangle( 0, 0, 0, 0 );
+		selectRect.setFill( Color.DODGERBLUE );
+		selectRect.setOpacity( 0.3 );
+		selectRect.setStroke( Color.rgb( 0, 0x29, 0x66 ) );
+		selectRect.setStrokeType( StrokeType.INSIDE );
+		selectRect.setStrokeWidth( 3.0 );
+
+		return setupSelection(chart, selectionMouseFilter, selectRect, selectionCallback,
+				mouseDragZoomingAllowed, mouseWheelZoomingAllowed);
+	}
+
+	public static Region setupSelection(XYChart<?,?> chart,
+										EventHandler<? super MouseEvent> selectionMouseFilter,
+										Consumer<Rectangle2D> selectionCallback) {
+		return setupSelection(chart, selectionMouseFilter, selectionCallback, false, true);
+	}
 	/**
 	 * Calls {@link #addDoublePrimaryClickAutoRangeHandler(XYChart, Node)} with the chart as the target.
 	 */
