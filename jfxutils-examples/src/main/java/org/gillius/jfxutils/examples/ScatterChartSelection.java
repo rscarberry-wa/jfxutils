@@ -1,10 +1,12 @@
 package org.gillius.jfxutils.examples;
 
 import javafx.application.Application;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.chart.ScatterChart;
 import javafx.scene.chart.XYChart;
@@ -16,21 +18,19 @@ import org.gillius.jfxutils.JFXUtil;
 import org.gillius.jfxutils.chart.ChartPanManager;
 import org.gillius.jfxutils.chart.JFXChartUtil;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class ScatterChartSelection extends Application {
 
     @FXML
-    private ScatterChart<Number,Number> chart;
+    private ScatterChart<Number, Number> chart;
 
-    private XYChart.Series<Number, Number> unselected;
-    private XYChart.Series<Number, Number> selected;
+    private XYChart.Series<Number, Number> unselectedSeries;
+    private XYChart.Series<Number, Number> selectedSeries;
 
-    private List<XYChart.Data<Number, Number>> data;
+    private List<Point2D> data;
+
     private DataKDTree kdTree;
 
     public static void main(String[] args) {
@@ -52,14 +52,19 @@ public class ScatterChartSelection extends Application {
     @FXML
     void initialize() {
 
-        unselected = generateSeries(0, 1.0, 0.0, 1.0, 50, 1234L);
-        selected = new XYChart.Series<>();
+        unselectedSeries = generateSeries(0, 1.0, 0.0, 1.0, 50, 1234L);
 
-        this.data = unselected.getData().stream().collect(Collectors.toList());
+        this.data = unselectedSeries.getData()
+                .stream()
+                .map(d -> new Point2D(d.getXValue().doubleValue(), d.getYValue().doubleValue()))
+                .collect(Collectors.toList());
+
+        this.selectedSeries = new XYChart.Series<Number, Number>();
+
         this.kdTree = DataKDTree.forData(data);
 
-        chart.getData().add(unselected);
-        chart.getData().add(selected);
+        chart.getData().add(unselectedSeries);
+        chart.getData().add(selectedSeries);
 
         // Pan either with right mouse button or ctrl-left mouse button.
         ChartPanManager panner = new ChartPanManager(chart);
@@ -78,17 +83,46 @@ public class ScatterChartSelection extends Application {
                 e.consume();
             }
         }, rect -> {
-
-            int[] selectedIndices = kdTree.inside(rect);
-
-            System.out.printf("%d points were in the selection area\n", selectedIndices.length);
-
+            handleSelection(rect);
         });
 
     }
 
     @FXML
     void resetView() {
+    }
+
+    private void handleSelection(Rectangle2D selectionRect) {
+
+        int[] indices = kdTree.inside(selectionRect);
+        NavigableSet<Integer> indexSet = new TreeSet<>();
+        for (int i = 0; i < indices.length; i++) {
+            indexSet.add(indices[i]);
+        }
+
+        final boolean chartAnimated = chart.getAnimated();
+
+        try {
+
+            chart.setAnimated(false);
+
+            unselectedSeries.getData().clear();
+            selectedSeries.getData().clear();
+
+            final int sz = data.size();
+            for (int i = 0; i < sz; i++) {
+                Point2D point2D = data.get(i);
+                XYChart.Data<Number, Number> dataItem = new XYChart.Data<>(point2D.getX(), point2D.getY());
+                if (indexSet.contains(i)) {
+                    selectedSeries.getData().add(dataItem);
+                } else {
+                    unselectedSeries.getData().add(dataItem);
+                }
+            }
+
+        } finally {
+            chart.setAnimated(chartAnimated);
+        }
     }
 
     private static XYChart.Series<Number, Number> generateSeries(
@@ -101,9 +135,9 @@ public class ScatterChartSelection extends Application {
         final double xSpread = xMax - xMin;
         final double ySpread = yMax - yMin;
 
-        for (int i=0; i<numPoints; i++) {
-            double x = xMin + random.nextDouble()*xSpread;
-            double y = yMin + random.nextDouble()*ySpread;
+        for (int i = 0; i < numPoints; i++) {
+            double x = xMin + random.nextDouble() * xSpread;
+            double y = yMin + random.nextDouble() * ySpread;
             result.getData().add(new XYChart.Data<>(x, y));
         }
 
@@ -112,7 +146,7 @@ public class ScatterChartSelection extends Application {
 
     public static class DataKDTree {
 
-        private final List<XYChart.Data<Number, Number>> data;
+        private final List<Point2D> data;
 
         private int[] nodes;
         private int[] lefts;
@@ -121,14 +155,14 @@ public class ScatterChartSelection extends Application {
 
         private int count;
 
-        public DataKDTree(List<XYChart.Data<Number, Number>> data) {
+        public DataKDTree(List<Point2D> data) {
             this.data = data;
         }
 
-        public static DataKDTree forData(List<XYChart.Data<Number, Number>> data) {
+        public static DataKDTree forData(List<Point2D> data) {
             DataKDTree kdTree = new DataKDTree(data);
             final int sz = data.size();
-            for (int i=0; i<sz; i++) {
+            for (int i = 0; i < sz; i++) {
                 kdTree.insert(i);
             }
             return kdTree;
@@ -148,7 +182,7 @@ public class ScatterChartSelection extends Application {
             int n = 0;
             int level = 0;
 
-            while(true) {
+            while (true) {
                 int curNode = nodes[n];
                 if (curNode == ndx) {
                     if (deleted[n]) {
@@ -192,7 +226,7 @@ public class ScatterChartSelection extends Application {
             int n = 0;
             int level = 0;
 
-            while(true) {
+            while (true) {
                 int curNode = nodes[n];
                 if (curNode == ndx) {
                     deleted[n] = true;
@@ -227,10 +261,10 @@ public class ScatterChartSelection extends Application {
             double maxX = rect.getMaxX();
             double maxY = rect.getMaxY();
 
-            double midX = (minX + maxX)/2;
-            double midY = (minY + maxY)/2;
-            double maxXDiff = rect.getWidth()/2;
-            double maxYDiff = rect.getHeight()/2;
+            double midX = (minX + maxX) / 2;
+            double midY = (minY + maxY) / 2;
+            double maxXDiff = rect.getWidth() / 2;
+            double maxYDiff = rect.getHeight() / 2;
 
             List<Integer> indexList = new ArrayList<>();
             rcloseTo(0, midX, midY, MutableRectangle.infiniteRectangle(), maxXDiff, maxYDiff,
@@ -359,19 +393,19 @@ public class ScatterChartSelection extends Application {
         }
 
         private double getDataValue(int dataIndex, int dimension) {
-            XYChart.Data<Number, Number> dataObj = this.data.get(dataIndex);
+            Point2D point2D = this.data.get(dataIndex);
             if (dimension == 0) {
-                return dataObj.getXValue().doubleValue();
+                return point2D.getX();
             } else if (dimension == 1) {
-                return dataObj.getYValue().doubleValue();
+                return point2D.getY();
             }
-            throw new IllegalArgumentException("dimension must be 0 or 1: " + dimension);
+            throw badDimension(dimension);
         }
 
         private void ensureCapacity(int minCap) {
             final int curCap = currentCapacity();
             if (curCap < minCap) {
-                final int newCap = Math.max(2*curCap, minCap);
+                final int newCap = Math.max(2 * curCap, minCap);
                 int[] newNodes = new int[newCap];
                 int[] newLefts = new int[newCap];
                 int[] newRights = new int[newCap];
